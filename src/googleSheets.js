@@ -14,7 +14,7 @@ export const fetchRoster = async () => {
         const data = await response.json();
 
         // Use deterministic IDs instead of Date.now() for persistent states across refreshes
-        return data.roster.map((player) => {
+        const parsedRoster = (data.roster || []).map((player) => {
             const safeFn = (player.firstName || "").trim().toLowerCase();
             const safeLn = (player.lastName || "").trim().toLowerCase();
             return {
@@ -22,9 +22,17 @@ export const fetchRoster = async () => {
                 id: `player-${safeFn}-${safeLn}`
             };
         });
+
+        // Backend will now return explicit checked-in lists from the Logs
+        const serverCheckedInIds = data.checkedInIds || [];
+
+        return {
+            roster: parsedRoster,
+            serverCheckedInIds: serverCheckedInIds
+        };
     } catch (error) {
         console.error("Failed to fetch roster:", error);
-        return [];
+        return { roster: [], serverCheckedInIds: [] };
     }
 };
 

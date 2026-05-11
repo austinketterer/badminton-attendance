@@ -41,7 +41,12 @@ function App() {
         return;
       }
       const data = await fetchRoster();
-      setRoster(data || []);
+      setRoster(data.roster || []);
+
+      if (data.serverCheckedInIds && data.serverCheckedInIds.length > 0) {
+        setCheckedInIds(prev => new Set([...prev, ...data.serverCheckedInIds]));
+      }
+
       setLoading(false);
     };
     loadData();
