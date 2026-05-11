@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import './index.css';
-import { fetchRoster, checkInPlayer, addPlayerToRoster, GOOGLE_SCRIPT_URL } from './googleSheets';
+import { fetchRoster, checkInPlayer, addPlayerToRoster, editPlayerInRoster, GOOGLE_SCRIPT_URL } from './googleSheets';
 
 function App() {
   const [roster, setRoster] = useState([]);
   const [checkedInIds, setCheckedInIds] = useState(new Set());
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -26,8 +27,6 @@ function App() {
     loadData();
   }, []);
 
-  const totalRevenue = checkedInIds.size * 2.50;
-
   const handleCheckIn = async (player) => {
     const isCurrentlyCheckedIn = checkedInIds.has(player.id);
 
@@ -44,7 +43,10 @@ function App() {
 
     if (!isCurrentlyCheckedIn) {
       // Send actual check-in request to Google Sheets in the background
-      const success = await checkInPlayer(player.firstName, player.lastName);
+      const fn = (player.firstName || "").trim().replace(/\s+/g, ' ');
+      const ln = (player.lastName || "").trim().replace(/\s+/g, ' ');
+
+      const success = await checkInPlayer(fn, ln);
       if (!success) {
         // Revert optimistic update if failed
         setCheckedInIds(prev => {
@@ -61,15 +63,16 @@ function App() {
     e.preventDefault();
     if (!newFirstName.trim() && !newLastName.trim()) return;
 
+    // Sanitize input
+    const fn = newFirstName.trim().replace(/\s+/g, ' ');
+    const ln = newLastName.trim().replace(/\s+/g, ' ');
+
     // Optimistic UI Update
     const newId = `temp-${Date.now()}`;
-    const newPlayer = { id: newId, firstName: newFirstName, lastName: newLastName };
+    const newPlayer = { id: newId, firstName: fn, lastName: ln };
 
     setRoster(prev => [...prev, newPlayer]);
     setCheckedInIds(prev => new Set(prev).add(newId));
-
-    const fn = newFirstName;
-    const ln = newLastName;
 
     setNewFirstName('');
     setNewLastName('');
@@ -83,18 +86,39 @@ function App() {
     }
   };
 
+  const handleEditPlayer = async (e, player) => {
+    e.stopPropagation();
+    const newFn = prompt("Update First Name:", player.firstName || "");
+    if (newFn === null) return;
+    const newLn = prompt("Update Last Name:", player.lastName || "");
+    if (newLn === null) return;
+
+    const fn = newFn.trim().replace(/\s+/g, ' ');
+    const ln = newLn.trim().replace(/\s+/g, ' ');
+
+    if (!fn && !ln) return;
+
+    // Optimistic UI Update
+    setRoster(prev => prev.map(p => p.id === player.id ? { ...p, firstName: fn, lastName: ln } : p));
+
+    const success = await editPlayerInRoster(player.firstName, player.lastName, fn, ln);
+    if (!success) {
+      alert("Failed to update player name in Google Sheet");
+      // Revert optimistic
+      setRoster(prev => prev.map(p => p.id === player.id ? { ...p, firstName: player.firstName, lastName: player.lastName } : p));
+    }
+  };
+
   return (
     <div className="app-container anim-fade-in">
-      <header className="header" style={{ marginBottom: '32px', textAlign: 'center' }}>
+      <header className="header" style={{ marginBottom: '24px', textAlign: 'center' }}>
         <h1 style={{
-          background: 'linear-gradient(135deg, var(--accent-primary), #60a5fa)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          marginBottom: '8px'
+          fontSize: '1.5rem',
+          color: 'var(--text-primary)',
+          fontWeight: 'bold'
         }}>
-          Badminton Club
+          Badminton Attendence: {checkedInIds.size} Checked In Today.
         </h1>
-        <p>Daily Attendance & Revenue Tracker</p>
       </header>
 
       {error && (
@@ -109,20 +133,116 @@ function App() {
         </div>
       ) : (
         <>
-          {/* Summary Board */}
-          <div className="glass-panel" style={{ padding: '24px', marginBottom: '32px', textAlign: 'center', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
-            <div>
-              <p style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Today's Revenue</p>
-              <div style={{ fontSize: '2.5rem', fontWeight: '700', color: 'var(--accent-success)' }}>
-                ${totalRevenue.toFixed(2)}
-              </div>
-            </div>
-            <div style={{ width: '1px', height: '40px', background: 'var(--bg-tertiary)' }}></div>
-            <div>
-              <p style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Checked In</p>
-              <div style={{ fontSize: '2rem', fontWeight: '600' }}>
-                {checkedInIds.size} <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>/ {roster.length}</span>
-              </div>
+          {/* Search Bar */}
+          <div style={{ marginBottom: '24px' }}>
+            <input
+              type="text"
+              placeholder="Search players..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                borderRadius: '12px',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--glass-bg)',
+                color: 'var(--text-primary)',
+                fontSize: '1rem',
+                outline: 'none'
+              }}
+            />
+          </div>
+
+          {/* Roster List */}
+          <div style={{ marginBottom: '32px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {roster
+                .filter(p => `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()))
+                .sort((a, b) => {
+                  const aIn = checkedInIds.has(a.id) ? 1 : 0;
+                  const bIn = checkedInIds.has(b.id) ? 1 : 0;
+                  if (aIn !== bIn) return bIn - aIn;
+                  return (a.firstName || '').localeCompare(b.firstName || '');
+                })
+                .map((player, index) => {
+                  const isCheckedIn = checkedInIds.has(player.id);
+                  return (
+                    <div
+                      key={player.id}
+                      onClick={() => handleCheckIn(player)}
+                      className={`glass-panel anim-slide-up stagger-${(index % 3) + 1}`}
+                      style={{
+                        padding: '16px 20px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        border: isCheckedIn ? '1px solid var(--accent-success)' : '1px solid var(--glass-border)',
+                        background: isCheckedIn ? 'rgba(16, 185, 129, 0.05)' : 'var(--glass-bg)',
+                        transition: 'all 0.2s ease',
+                        transform: 'translateY(0)' // For hover effect
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                      onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                      <div style={{ fontWeight: '500', fontSize: '1.1rem' }}>
+                        {player.firstName} <span style={{ color: 'var(--text-secondary)' }}>{player.lastName}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <button
+                          onClick={(e) => handleEditPlayer(e, player)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'color 0.2s'
+                          }}
+                          title="Edit Player"
+                          onMouseOver={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                          onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                          </svg>
+                        </button>
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: isCheckedIn ? 'var(--accent-success)' : 'var(--bg-tertiary)',
+                          color: isCheckedIn ? '#fff' : 'transparent',
+                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                        }}>
+                          {/* SVG Checkmark */}
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isCheckedIn ? 1 : 0, transform: `scale(${isCheckedIn ? 1 : 0.5})`, transition: 'all 0.2s' }}>
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {roster.length === 0 && !error && !loading && !searchQuery && (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  No players found. Add someone below!
+                </div>
+              )}
+              {roster.length > 0 && roster.filter(p => `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  No players matched your search.
+                </div>
+              )}
             </div>
           </div>
 
@@ -146,67 +266,6 @@ function App() {
                 Add +
               </button>
             </form>
-          </div>
-
-          {/* Roster List */}
-          <div>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Club Roster</span>
-              <span style={{ fontSize: '0.875rem', fontWeight: 'normal', color: 'var(--text-muted)' }}>Tap to check in</span>
-            </h2>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {roster.map((player, index) => {
-                const isCheckedIn = checkedInIds.has(player.id);
-                return (
-                  <div
-                    key={player.id}
-                    onClick={() => handleCheckIn(player)}
-                    className={`glass-panel anim-slide-up stagger-${(index % 3) + 1}`}
-                    style={{
-                      padding: '16px 20px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      border: isCheckedIn ? '1px solid var(--accent-success)' : '1px solid var(--glass-border)',
-                      background: isCheckedIn ? 'rgba(16, 185, 129, 0.05)' : 'var(--glass-bg)',
-                      transition: 'all 0.2s ease',
-                      transform: 'translateY(0)' // For hover effect
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                    onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                  >
-                    <div style={{ fontWeight: '500', fontSize: '1.1rem' }}>
-                      {player.firstName} <span style={{ color: 'var(--text-secondary)' }}>{player.lastName}</span>
-                    </div>
-
-                    <div style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: isCheckedIn ? 'var(--accent-success)' : 'var(--bg-tertiary)',
-                      color: isCheckedIn ? '#fff' : 'transparent',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}>
-                      {/* SVG Checkmark */}
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isCheckedIn ? 1 : 0, transform: `scale(${isCheckedIn ? 1 : 0.5})`, transition: 'all 0.2s' }}>
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {roster.length === 0 && !error && (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                  No players found. Add someone above!
-                </div>
-              )}
-            </div>
           </div>
         </>
       )}

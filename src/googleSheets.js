@@ -82,3 +82,33 @@ export const addPlayerToRoster = async (firstName, lastName) => {
         return false;
     }
 };
+
+/**
+ * Edits an existing player's name in the roster
+ * @param {string} oldFirstName 
+ * @param {string} oldLastName 
+ * @param {string} newFirstName 
+ * @param {string} newLastName 
+ * @returns {Promise<boolean>} Success status
+ */
+export const editPlayerInRoster = async (oldFirstName, oldLastName, newFirstName, newLastName) => {
+    try {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "text/plain",
+            },
+            body: JSON.stringify({
+                action: "editPlayer",
+                oldFirstName: oldFirstName,
+                oldLastName: oldLastName,
+                newFirstName: newFirstName,
+                newLastName: newLastName
+            })
+        });
+        return true;
+    } catch (error) {
+        console.error("Failed to edit player:", error);
+        return false;
+    }
+};

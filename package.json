@@ -1,8 +1,8 @@
 {
-  "name": "badminton-attendence",
+  "name": "badminton-attendance",
   "private": true,
   "version": "0.0.0",
-  "homepage": "https://austin.github.io/badminton-attendence/",
+  "homepage": "https://austinketterer.github.io/badminton-attendance/",
   "type": "module",
   "scripts": {
     "predeploy": "npm run build",
