@@ -13,11 +13,15 @@ export const fetchRoster = async () => {
         if (!response.ok) throw new Error('Network response was not ok');
         const data = await response.json();
 
-        // Assign random local IDs if the backend doesn't provide them, to help React rendering
-        return data.roster.map((player, index) => ({
-            ...player,
-            id: `player-${index}-${Date.now()}`
-        }));
+        // Use deterministic IDs instead of Date.now() for persistent states across refreshes
+        return data.roster.map((player) => {
+            const safeFn = (player.firstName || "").trim().toLowerCase();
+            const safeLn = (player.lastName || "").trim().toLowerCase();
+            return {
+                ...player,
+                id: `player-${safeFn}-${safeLn}`
+            };
+        });
     } catch (error) {
         console.error("Failed to fetch roster:", error);
         return [];

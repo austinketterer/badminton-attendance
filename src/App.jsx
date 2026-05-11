@@ -4,7 +4,27 @@ import { fetchRoster, checkInPlayer, addPlayerToRoster, editPlayerInRoster, GOOG
 
 function App() {
   const [roster, setRoster] = useState([]);
-  const [checkedInIds, setCheckedInIds] = useState(new Set());
+
+  // Persist check-ins for the day using localStorage
+  const [checkedInIds, setCheckedInIds] = useState(() => {
+    try {
+      const storedDate = localStorage.getItem('badminton_checked_in_date');
+      const today = new Date().toDateString();
+      if (storedDate === today) {
+        const ids = JSON.parse(localStorage.getItem('badminton_checked_in_ids'));
+        if (Array.isArray(ids)) return new Set(ids);
+      }
+    } catch (e) {
+      console.warn("Could not load stored check-in data", e);
+    }
+    return new Set();
+  });
+
+  useEffect(() => {
+    localStorage.setItem('badminton_checked_in_date', new Date().toDateString());
+    localStorage.setItem('badminton_checked_in_ids', JSON.stringify([...checkedInIds]));
+  }, [checkedInIds]);
+
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
