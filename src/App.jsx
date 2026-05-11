@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import './index.css';
 import { fetchRoster, checkInPlayer, addPlayerToRoster, editPlayerInRoster, GOOGLE_SCRIPT_URL } from './googleSheets';
+import { fetchSchedules } from './scheduleFetcher';
 
 function App() {
   const [roster, setRoster] = useState([]);
+  const [schedules, setSchedules] = useState(null);
 
   // Persist check-ins for the day using localStorage
   const [checkedInIds, setCheckedInIds] = useState(() => {
@@ -40,13 +42,19 @@ function App() {
         setLoading(false);
         return;
       }
-      const data = await fetchRoster();
+
+      const [data, scheds] = await Promise.all([
+        fetchRoster(),
+        fetchSchedules()
+      ]);
+
       setRoster(data.roster || []);
 
       if (data.serverCheckedInIds && data.serverCheckedInIds.length > 0) {
         setCheckedInIds(prev => new Set([...prev, ...data.serverCheckedInIds]));
       }
 
+      setSchedules(scheds);
       setLoading(false);
     };
     loadData();
@@ -158,6 +166,27 @@ function App() {
         </div>
       ) : (
         <>
+          {/* Upcoming Schedules */}
+          {schedules && (
+            <div className="glass-panel" style={{ padding: '20px', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '1.1rem', marginBottom: '16px', color: 'var(--text-primary)' }}>Upcoming Badminton Sessions</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {Object.entries(schedules).map(([title, dates]) => (
+                  <div key={title} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--glass-border)' }}>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{title}</span>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {dates && dates.length > 0 ? dates.map(d => (
+                        <span key={d} style={{ background: 'var(--accent-primary)', color: '#fff', padding: '4px 10px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600' }}>{d}</span>
+                      )) : (
+                        <span style={{ color: 'var(--accent-warning)', fontSize: '0.85rem' }}>Unavailable</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Search Bar */}
           <div style={{ marginBottom: '24px' }}>
             <input
